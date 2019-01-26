@@ -18,17 +18,7 @@ package org.springframework.boot;
 
 import java.lang.reflect.Constructor;
 import java.security.AccessControlException;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Properties;
-import java.util.Set;
+import java.util.*;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -39,6 +29,8 @@ import org.springframework.beans.factory.support.BeanDefinitionRegistry;
 import org.springframework.beans.factory.support.BeanNameGenerator;
 import org.springframework.beans.factory.xml.XmlBeanDefinitionReader;
 import org.springframework.boot.Banner.Mode;
+import org.springframework.boot.context.event.ApplicationStartedEvent;
+import org.springframework.boot.context.event.EventPublishingRunListener;
 import org.springframework.boot.diagnostics.FailureAnalyzers;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextInitializer;
@@ -48,19 +40,12 @@ import org.springframework.context.annotation.AnnotatedBeanDefinitionReader;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.annotation.AnnotationConfigUtils;
 import org.springframework.context.annotation.ClassPathBeanDefinitionScanner;
+import org.springframework.context.event.SimpleApplicationEventMulticaster;
 import org.springframework.context.support.AbstractApplicationContext;
 import org.springframework.context.support.GenericApplicationContext;
 import org.springframework.core.GenericTypeResolver;
 import org.springframework.core.annotation.AnnotationAwareOrderComparator;
-import org.springframework.core.env.CommandLinePropertySource;
-import org.springframework.core.env.CompositePropertySource;
-import org.springframework.core.env.ConfigurableEnvironment;
-import org.springframework.core.env.Environment;
-import org.springframework.core.env.MapPropertySource;
-import org.springframework.core.env.MutablePropertySources;
-import org.springframework.core.env.PropertySource;
-import org.springframework.core.env.SimpleCommandLinePropertySource;
-import org.springframework.core.env.StandardEnvironment;
+import org.springframework.core.env.*;
 import org.springframework.core.io.DefaultResourceLoader;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.ResourceLoader;
@@ -242,17 +227,29 @@ public class SpringApplication {
 
 	@SuppressWarnings({ "unchecked", "rawtypes" })
 	private void initialize(Object[] sources) {
+
+		//sources是传进来的参数,如果有参数就会交到sources集合中,set集合去重
 		if (sources != null && sources.length > 0) {
 			this.sources.addAll(Arrays.asList(sources));
 		}
+
+		//判断是否是web项目
 		this.webEnvironment = deduceWebEnvironment();
+
+		//扫描META-INF/spring.factories文件.获取ApplicationContextInitializer的key值类
 		setInitializers((Collection) getSpringFactoriesInstances(
 				ApplicationContextInitializer.class));
+
+
+		//扫描META-INF/spring.factories文件.获取ApplicationListener的key值类
 		setListeners((Collection) getSpringFactoriesInstances(ApplicationListener.class));
+
+		//推荐主函数main的类,即启动类
 		this.mainApplicationClass = deduceMainApplicationClass();
 	}
 
 	private boolean deduceWebEnvironment() {
+		//如果包含ConfigurableWebApplicationContext和servlet就是web 项目
 		for (String className : WEB_ENVIRONMENT_CLASSES) {
 			if (!ClassUtils.isPresent(className, null)) {
 				return false;
@@ -283,18 +280,109 @@ public class SpringApplication {
 	 * @return a running {@link ApplicationContext}
 	 */
 	public ConfigurableApplicationContext run(String... args) {
+		//开启秒表
 		StopWatch stopWatch = new StopWatch();
 		stopWatch.start();
 		ConfigurableApplicationContext context = null;
 		FailureAnalyzers analyzers = null;
 		configureHeadlessProperty();
+
+		//获取监听器SpringApplicationRunListener的子类,并且排序,扫描META-INF/spring.factories文件获取
+		//在初始化时,只有子类EventPublishingRunListener,其构造方法将所有的ApplicationListener增加到属性类
+		// SimpleApplicationEventMulticaster(属性名initialMulticaster)的map属性defaultRetriever中
+		//ListenerRetriever.applicationListeners集合中
+		//EventPublishingRunListener 是观察者模式中的观察者,被观察的对象是SpringApplicationRunListener
 		SpringApplicationRunListeners listeners = getRunListeners(args);
+//		EventPublishingRunListener eventPublishingRunListener;
+//		SimpleApplicationEventMulticaster simpleApplicationEventMulticaster = new SimpleApplicationEventMulticaster();
+//		EventObject是ApplicationStartedEvent的基类,ApplicationStartedEvent在初始化时把SpringApplication放到了属性source中
+
+		//发布通知被观察者
+//		simpleApplicationEventMulticaster.multicastEvent(new ApplicationStartedEvent(this, null));
+//      SpringApplicationRunListeners运行starting方法
+//		this.initialMulticaster --->SimpleApplicationEventMulticaster
+//				.multicastEvent(new ApplicationStartedEvent(SpringApplication, args)) -->SimpleApplicationEventMulticaster#multicastEvent
+//					.multicastEvent(event, resolveDefaultEventType(event))
+//					resolveDefaultEventType(event)是将event转为ResolvableType(是将入参的class转为ResolvableType中属性resolved和type指向入参的class)
+//						.multicastEvent(event, ResolvableType)
+//						 .getApplicationListeners(event, type){
+//		ApplicationStartedEvent在初始化时把SpringApplication放到了属性source中,所以这里获取的是source = SpringApplication
+//		Object source = event.getSource();
+//		Class<?> sourceType = (source != null ? source.getClass() : null);//此时的sourceType 就是ApplicationStartedEvent的ResolvableType
+//		ListenerCacheKey cacheKey = new ListenerCacheKey(eventType, sourceType);//cacheKey构造方法如下,就两个属性,包含了事件,和源
+//		retrieverCache 是个缓存listeners的map ,key是ListenerCacheKey,value是ListenerRetriever
+//		ListenerRetriever对应三个属性:Set<ApplicationListener<?>> applicationListeners;Set<String> applicationListenerBeans; boolean preFiltered
+
+
+//		public ListenerCacheKey(ResolvableType eventType, Class<?> sourceType) {
+//			this.eventType = eventType;//坚挺事件
+//			this.sourceType = sourceType;//源
+//		}
+//		ListenerRetriever Retriever  =  retrieverCache.get(cacheKey);
+//		Map<ListenerCacheKey, ListenerRetriever> retrieverCache = new ConcurrentHashMap<ListenerCacheKey, ListenerRetriever>(64);
+//
+//		// Quick check for existing entry on ConcurrentHashMap...
+//		ListenerRetriever retriever = this.retrieverCache.get(cacheKey);
+//	}
+		//通知所有的SpringApplicationRunListener执行starting方法
+//		/EventPublishingRunListener也是观察者模式中的观察者,被观察的对象是ApplicationListener
+		//ApplicationListener的子类通过 实现GenericApplicationListener, SmartApplicationListener设置可以支持的EventType
+//		public boolean supportsEventType(ResolvableType resolvableType)//执行坚挺事件
+//		public boolean supportsSourceType(Class<?> sourceType)//指明坚挺源
+		//监听ApplicationStartedEvent事件的监听器有4个,
+
+		//每个监听器做的大概事情?
+
+
+
+		// 并且监听器放到map的retrieverCache中
+		//遍历获取到的监听器执行doInvokeListener(listener,Event)再调用listener.onApplicationEvent(event);
+//
 		listeners.starting();
 		try {
-			ApplicationArguments applicationArguments = new DefaultApplicationArguments(
-					args);
-			ConfigurableEnvironment environment = prepareEnvironment(listeners,
-					applicationArguments);
+//
+//			private final Map<String, List<String>> optionArgs = new HashMap<String, List<String>>();//存放带--开始的参数
+//			private final List<String> nonOptionArgs = new ArrayList<String>();//存放不带--开始的参数
+			ApplicationArguments applicationArguments = new DefaultApplicationArguments(args);
+
+
+			//listeners入参中的监听器只有EventPublishingRunListener,applicationArguments中只有自动类传入的参数
+//			1.prepareEnvironment
+//				会new StandardServletEnvironment(),在其父类的构造方法中会设置属性(系统属性,环境属性,
+
+			//其结果是通过 System.getProperty("spring.profiles.active")获取
+//			private final Set<String> activeProfiles = new LinkedHashSet<String>(); 长度为0,
+
+//			//System.getProperty("spring.profiles.default")获取
+//			private final Set<String> defaultProfiles = new LinkedHashSet<String>(getReservedDefaultProfiles());长度为1,只为default
+//
+//			private final MutablePropertySources propertySources = new MutablePropertySources(this.logger);
+//			有四个属性
+//			StubPropertySource {name='servletConfigInitParams'}
+//			StubPropertySource {name='servletContextInitParams'}
+//			MapPropertySource {name='systemProperties'} //System.getProperties()
+//			SystemEnvironmentPropertySource {name='systemEnvironment'}//System.getenv()
+//
+//
+//			private final ConfigurablePropertyResolver propertyResolver = new PropertySourcesPropertyResolver(this.propertySources);
+//				ConfigurableEnvironment environment = getOrCreateEnvironment();
+//
+//			2.configureEnvironment(environment, applicationArguments.getSourceArgs());
+//					configurePropertySources(environment, args);
+					//会将主函数的入参放到propertySources中,如果之前存在,会删除,然后把主函数传参放到首位
+//					configureProfiles(environment, args);System.getProperty("spring.profiles.active")放置到environment中
+//						environment.setActiveProfiles(System.getProperty("spring.profiles.active")) 为空
+//
+//
+//
+//
+//
+//
+//
+			ConfigurableEnvironment environment = prepareEnvironment(listeners,applicationArguments);
+
+
+
 			Banner printedBanner = printBanner(environment);
 			context = createApplicationContext();
 			analyzers = new FailureAnalyzers(context);
@@ -314,20 +402,6 @@ public class SpringApplication {
 			handleRunFailure(context, listeners, analyzers, ex);
 			throw new IllegalStateException(ex);
 		}
-	}
-
-	private ConfigurableEnvironment prepareEnvironment(
-			SpringApplicationRunListeners listeners,
-			ApplicationArguments applicationArguments) {
-		// Create and configure the environment
-		ConfigurableEnvironment environment = getOrCreateEnvironment();
-		configureEnvironment(environment, applicationArguments.getSourceArgs());
-		listeners.environmentPrepared(environment);
-		if (!this.webEnvironment) {
-			environment = new EnvironmentConverter(getClassLoader())
-					.convertToStandardEnvironmentIfNecessary(environment);
-		}
-		return environment;
 	}
 
 	private void prepareContext(ConfigurableApplicationContext context,
@@ -368,6 +442,20 @@ public class SpringApplication {
 		}
 	}
 
+	private ConfigurableEnvironment prepareEnvironment(
+			SpringApplicationRunListeners listeners,
+			ApplicationArguments applicationArguments) {
+		// Create and configure the environment
+		ConfigurableEnvironment environment = getOrCreateEnvironment();
+		configureEnvironment(environment, applicationArguments.getSourceArgs());
+		listeners.environmentPrepared(environment);
+		if (!this.webEnvironment) {
+			environment = new EnvironmentConverter(getClassLoader())
+					.convertToStandardEnvironmentIfNecessary(environment);
+		}
+		return environment;
+	}
+
 	private void configureHeadlessProperty() {
 		System.setProperty(SYSTEM_PROPERTY_JAVA_AWT_HEADLESS, System.getProperty(
 				SYSTEM_PROPERTY_JAVA_AWT_HEADLESS, Boolean.toString(this.headless)));
@@ -383,14 +471,21 @@ public class SpringApplication {
 		return getSpringFactoriesInstances(type, new Class<?>[] {});
 	}
 
+	//通过获取
 	private <T> Collection<? extends T> getSpringFactoriesInstances(Class<T> type,
 			Class<?>[] parameterTypes, Object... args) {
 		ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
 		// Use names and ensure unique to protect against duplicates
+		//使用set集合避免重复,type是指输入的class,classLoader类加载器,会根据type的name在META-INF/spring.factories
+		//去获取值,会根据逗号分隔转为set
 		Set<String> names = new LinkedHashSet<String>(
 				SpringFactoriesLoader.loadFactoryNames(type, classLoader));
+		//
 		List<T> instances = createSpringFactoriesInstances(type, parameterTypes,
 				classLoader, args, names);
+
+		//排序,地层调用的Collections.sort(list, INSTANCE)
+		//INSTANCE 是AnnotationAwareOrderComparator 实现了Comparator 接口,降序排序,
 		AnnotationAwareOrderComparator.sort(instances);
 		return instances;
 	}
@@ -402,10 +497,24 @@ public class SpringApplication {
 		List<T> instances = new ArrayList<T>(names.size());
 		for (String name : names) {
 			try {
+				//ClassUtils初始化时会将八种基本类型加入到primitiveTypeNameMap中,
+				//将八种基本类型和其他数组还有通用类加入到commonClassCache的map属性中
+				//在查找class是否存在时首先判断是否是基本类型,在primitiveTypeNameMap中查找,找到就返回
+				//再在通用的类中commonClassCache查找,找到就返回
+				//再在用cl = Thread.currentThread().getContextClassLoader();如果cl不为空,clToUse.loadClass(name);
+				//如果cl为空,就用Class.forName(name);
 				Class<?> instanceClass = ClassUtils.forName(name, classLoader);
+
+
+				//地层调用java的Class.isAssignableFrom(subTypeClass),判断instanceClass是否是type同类或者子类
 				Assert.isAssignable(type, instanceClass);
+
+
+				//指定入参类型获取构造方法
 				Constructor<?> constructor = instanceClass
 						.getDeclaredConstructor(parameterTypes);
+				//第一步:如果构造方法是私有,设置为可以用Class.setAccessible(true);
+				//第二步:Class.newInstance(参数类型数组),反射创建实例
 				T instance = (T) BeanUtils.instantiateClass(constructor, args);
 				instances.add(instance);
 			}
